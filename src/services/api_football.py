@@ -178,4 +178,3 @@ class APIFootballService:
         except Exception as e:
             print(f"Erreur lors de la recherche d'équipe par ID: {e}")
             return {}
-
