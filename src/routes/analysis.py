@@ -55,9 +55,14 @@ def analyze_match():
         # Générer la prédiction basée sur les données réelles
         prediction = analysis_engine.predict_match_outcome(team1_form, team2_form, h2h_analysis)
         
+        # Générer des prédictions de buts et corners
+        goals_prediction = analysis_engine.predict_goals_and_corners(
+            team1_fixtures, team2_fixtures, team1_id, team2_id
+        )
+        
         # Générer des insights personnalisés
         key_insights = analysis_engine.generate_match_insights(
-            team1_name, team2_name, team1_form, team2_form, h2h_analysis, prediction
+            team1_name, team2_name, team1_form, team2_form, h2h_analysis, prediction, goals_prediction
         )
 
         result = {
@@ -69,6 +74,7 @@ def analyze_match():
             },
             'head_to_head': h2h_analysis,
             'prediction': prediction,
+            'goals_prediction': goals_prediction,
             'key_insights': key_insights
         }
         
@@ -100,24 +106,7 @@ def get_matches_by_date():
         except Exception:
             pass
     
-    # Ajouter les prédictions rapides pour chaque match
-    matches_with_predictions = []
-    for match in matches:
-        try:
-            home_id = match.get('teams', {}).get('home', {}).get('id')
-            away_id = match.get('teams', {}).get('away', {}).get('id')
-            
-            if home_id and away_id:
-                # Générer une prédiction rapide basée sur les IDs des équipes
-                quick_prediction = analysis_engine.generate_quick_prediction(home_id, away_id)
-                match['quick_prediction'] = quick_prediction
-            
-            matches_with_predictions.append(match)
-        except Exception as e:
-            print(f"Erreur lors de la génération de prédiction rapide: {e}")
-            matches_with_predictions.append(match)
-    
-    return jsonify({"matches": matches_with_predictions})
+    return jsonify({"matches": matches})
 
 @analysis_bp.route('/leagues', methods=['GET'])
 def get_leagues():
