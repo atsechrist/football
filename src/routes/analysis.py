@@ -31,69 +31,6 @@ def analyze_match():
     team2_id = data['team2_id']
     
     try:
-        # Données simulées pour la démo
-        # En production, ces données viendraient de l'API réelle
-        
-        # Forme récente simulée
-        team1_form = {
-            'score': 75.5,
-            'wins': 7,
-            'draws': 2,
-            'losses': 1,
-            'goals_for': 18,
-            'goals_against': 8,
-            'goal_difference': 10
-        }
-        
-        team2_form = {
-            'score': 60.2,
-            'wins': 5,
-            'draws': 3,
-            'losses': 2,
-            'goals_for': 14,
-            'goals_against': 12,
-            'goal_difference': 2
-        }
-        
-        # Historique H2H simulé
-        h2h_analysis = {
-            'total_matches': 15,
-            'team1_wins': 6,
-            'team2_wins': 4,
-            'draws': 5,
-            'team1_win_percentage': 40.0,
-            'team2_win_percentage': 26.67,
-            'draw_percentage': 33.33,
-            'avg_goals_team1': 1.8,
-            'avg_goals_team2': 1.4
-        }
-        
-        # Statistiques d'équipe simulées
-        team1_stats = {
-            'goals': {
-                'for': {'average': {'total': 2.1}},
-                'against': {'average': {'total': 0.9}}
-            },
-            'fixtures': {
-                'wins': {'home': 8, 'away': 5}
-            }
-        }
-        
-        team2_stats = {
-            'goals': {
-                'for': {'average': {'total': 1.6}},
-                'against': {'average': {'total': 1.3}}
-            },
-            'fixtures': {
-                'wins': {'home': 6, 'away': 4}
-            }
-        }
-        
-        # Analyses
-        prediction = analysis_engine.predict_match_outcome(team1_form, team2_form, h2h_analysis)
-        team1_analysis = analysis_engine.analyze_team_strengths_weaknesses(team1_stats)
-        team2_analysis = analysis_engine.analyze_team_strengths_weaknesses(team2_stats)
-        
         # Récupérer les informations des équipes via l'API
         team1_data = api_service.search_teams_by_id(team1_id)
         team2_data = api_service.search_teams_by_id(team2_id)
@@ -132,16 +69,7 @@ def analyze_match():
             },
             'head_to_head': h2h_analysis,
             'prediction': prediction,
-            'team_analysis': {
-                'team1': team1_analysis,
-                'team2': team2_analysis
-            },
-            'key_insights': [
-                "L'Équipe 1 montre une meilleure forme récente avec 75.5% de performance",
-                "L'historique des confrontations est équilibré avec 33.33% de matchs nuls",
-                "L'Équipe 1 a une attaque plus efficace (2.1 buts/match vs 1.6)",
-                "L'Équipe 1 a également une défense plus solide (0.9 buts encaissés/match vs 1.3)"
-            ]
+            'key_insights': key_insights
         }
         
         return jsonify(result)
@@ -172,7 +100,24 @@ def get_matches_by_date():
         except Exception:
             pass
     
-    return jsonify({"matches": matches})
+    # Ajouter les prédictions rapides pour chaque match
+    matches_with_predictions = []
+    for match in matches:
+        try:
+            home_id = match.get('teams', {}).get('home', {}).get('id')
+            away_id = match.get('teams', {}).get('away', {}).get('id')
+            
+            if home_id and away_id:
+                # Générer une prédiction rapide basée sur les IDs des équipes
+                quick_prediction = analysis_engine.generate_quick_prediction(home_id, away_id)
+                match['quick_prediction'] = quick_prediction
+            
+            matches_with_predictions.append(match)
+        except Exception as e:
+            print(f"Erreur lors de la génération de prédiction rapide: {e}")
+            matches_with_predictions.append(match)
+    
+    return jsonify({"matches": matches_with_predictions})
 
 @analysis_bp.route('/leagues', methods=['GET'])
 def get_leagues():
