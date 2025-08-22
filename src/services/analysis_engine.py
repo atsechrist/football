@@ -207,3 +207,169 @@ class AnalysisEngine:
             'weaknesses': weaknesses,
             'overall_rating': round(overall_rating, 1)
         }
+
+
+    def analyze_recent_form(self, fixtures: List[Dict], team_id: int) -> Dict:
+        """Analyser la forme récente d'une équipe"""
+        if not fixtures:
+            return {'score': 50, 'wins': 0, 'draws': 0, 'losses': 0, 'goals_for': 0, 'goals_against': 0, 'goal_difference': 0}
+        
+        wins = draws = losses = 0
+        goals_for = goals_against = 0
+        
+        for fixture in fixtures:
+            teams = fixture.get('teams', {})
+            goals = fixture.get('goals', {})
+            
+            home_id = teams.get('home', {}).get('id')
+            away_id = teams.get('away', {}).get('id')
+            home_goals = goals.get('home', 0) or 0
+            away_goals = goals.get('away', 0) or 0
+            
+            # Déterminer les buts pour l'équipe analysée
+            if home_id == team_id:
+                team_goals, opponent_goals = home_goals, away_goals
+            else:
+                team_goals, opponent_goals = away_goals, home_goals
+            
+            goals_for += team_goals
+            goals_against += opponent_goals
+            
+            # Déterminer le résultat
+            if team_goals > opponent_goals:
+                wins += 1
+            elif team_goals == opponent_goals:
+                draws += 1
+            else:
+                losses += 1
+        
+        # Calcul du score de forme (3 points pour une victoire, 1 pour un nul)
+        total_matches = len(fixtures)
+        form_score = (wins * 3 + draws * 1) / (total_matches * 3) * 100 if total_matches > 0 else 50
+        
+        return {
+            'score': round(form_score, 2),
+            'wins': wins,
+            'draws': draws,
+            'losses': losses,
+            'goals_for': goals_for,
+            'goals_against': goals_against,
+            'goal_difference': goals_for - goals_against,
+            'matches_played': total_matches
+        }
+
+    def generate_match_insights(self, team1_name: str, team2_name: str, team1_form: Dict, 
+                               team2_form: Dict, h2h_analysis: Dict, prediction: Dict) -> List[str]:
+        """Générer des insights personnalisés pour le match"""
+        insights = []
+        
+        # Analyse de la forme récente
+        form_diff = team1_form.get('score', 50) - team2_form.get('score', 50)
+        if abs(form_diff) > 15:
+            better_team = team1_name if form_diff > 0 else team2_name
+            better_score = max(team1_form.get('score', 50), team2_form.get('score', 50))
+            insights.append(f"{better_team} affiche une meilleure forme récente avec {better_score}% de performance")
+        else:
+            insights.append(f"Les deux équipes sont dans une forme similaire ({team1_form.get('score', 50)}% vs {team2_form.get('score', 50)}%)")
+        
+        # Analyse de l'historique H2H
+        total_h2h = h2h_analysis.get('total_matches', 0)
+        if total_h2h > 0:
+            team1_wins = h2h_analysis.get('team1_wins', 0)
+            team2_wins = h2h_analysis.get('team2_wins', 0)
+            draws = h2h_analysis.get('draws', 0)
+            
+            if team1_wins > team2_wins:
+                insights.append(f"{team1_name} domine l'historique avec {team1_wins} victoires contre {team2_wins} sur {total_h2h} matchs")
+            elif team2_wins > team1_wins:
+                insights.append(f"{team2_name} domine l'historique avec {team2_wins} victoires contre {team1_wins} sur {total_h2h} matchs")
+            else:
+                insights.append(f"L'historique des confrontations est équilibré ({team1_wins}-{team2_wins}-{draws} sur {total_h2h} matchs)")
+        else:
+            insights.append("Aucun historique récent entre ces deux équipes")
+        
+        # Analyse offensive/défensive
+        team1_gf = team1_form.get('goals_for', 0)
+        team1_ga = team1_form.get('goals_against', 0)
+        team2_gf = team2_form.get('goals_for', 0)
+        team2_ga = team2_form.get('goals_against', 0)
+        
+        team1_matches = team1_form.get('matches_played', 1)
+        team2_matches = team2_form.get('matches_played', 1)
+        
+        team1_avg_gf = team1_gf / team1_matches if team1_matches > 0 else 0
+        team2_avg_gf = team2_gf / team2_matches if team2_matches > 0 else 0
+        
+        if team1_avg_gf > team2_avg_gf + 0.5:
+            insights.append(f"{team1_name} a une attaque plus efficace ({team1_avg_gf:.1f} buts/match vs {team2_avg_gf:.1f})")
+        elif team2_avg_gf > team1_avg_gf + 0.5:
+            insights.append(f"{team2_name} a une attaque plus efficace ({team2_avg_gf:.1f} buts/match vs {team1_avg_gf:.1f})")
+        
+        team1_avg_ga = team1_ga / team1_matches if team1_matches > 0 else 0
+        team2_avg_ga = team2_ga / team2_matches if team2_matches > 0 else 0
+        
+        if team1_avg_ga < team2_avg_ga - 0.5:
+            insights.append(f"{team1_name} a une défense plus solide ({team1_avg_ga:.1f} buts encaissés/match vs {team2_avg_ga:.1f})")
+        elif team2_avg_ga < team1_avg_ga - 0.5:
+            insights.append(f"{team2_name} a une défense plus solide ({team2_avg_ga:.1f} buts encaissés/match vs {team1_avg_ga:.1f})")
+        
+        # Analyse de la prédiction
+        max_prob = max(prediction.get('team1_win_probability', 0), 
+                      prediction.get('team2_win_probability', 0), 
+                      prediction.get('draw_probability', 0))
+        
+        if max_prob == prediction.get('team1_win_probability', 0):
+            insights.append(f"La prédiction favorise {team1_name} avec {max_prob}% de chances de victoire")
+        elif max_prob == prediction.get('team2_win_probability', 0):
+            insights.append(f"La prédiction favorise {team2_name} avec {max_prob}% de chances de victoire")
+        else:
+            insights.append(f"Le match nul est le résultat le plus probable avec {max_prob}% de chances")
+        
+        # Niveau de confiance
+        confidence = prediction.get('confidence_level', 'Moyenne')
+        insights.append(f"Niveau de confiance de l'analyse: {confidence}")
+        
+        return insights
+
+
+    def generate_quick_prediction(self, home_id: int, away_id: int) -> Dict:
+        """Générer une prédiction rapide basée sur les IDs des équipes"""
+        try:
+            # Utiliser un algorithme simplifié basé sur les IDs pour une prédiction rapide
+            # En production, ceci pourrait utiliser des données mises en cache ou des statistiques pré-calculées
+            
+            # Algorithme simplifié basé sur les IDs (pour la démo)
+            # Plus l'ID est petit, plus l'équipe est "établie" (approximation)
+            home_strength = max(30, 100 - (home_id % 100))
+            away_strength = max(30, 100 - (away_id % 100))
+            
+            # Avantage du terrain (bonus de 10% pour l'équipe à domicile)
+            home_strength *= 1.1
+            
+            # Calcul des probabilités
+            total_strength = home_strength + away_strength
+            home_prob = (home_strength / total_strength) * 70  # 70% réparti entre les équipes
+            away_prob = (away_strength / total_strength) * 70
+            draw_prob = 30  # 30% de base pour le match nul
+            
+            # Normalisation pour que la somme soit 100%
+            total_prob = home_prob + away_prob + draw_prob
+            home_prob = (home_prob / total_prob) * 100
+            away_prob = (away_prob / total_prob) * 100
+            draw_prob = (draw_prob / total_prob) * 100
+            
+            return {
+                'home_win_probability': round(home_prob, 1),
+                'away_win_probability': round(away_prob, 1),
+                'draw_probability': round(draw_prob, 1),
+                'confidence': 'Estimation rapide'
+            }
+        except Exception as e:
+            print(f"Erreur lors de la génération de prédiction rapide: {e}")
+            # Prédiction par défaut en cas d'erreur
+            return {
+                'home_win_probability': 40.0,
+                'away_win_probability': 35.0,
+                'draw_probability': 25.0,
+                'confidence': 'Estimation par défaut'
+            }
