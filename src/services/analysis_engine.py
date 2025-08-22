@@ -259,7 +259,8 @@ class AnalysisEngine:
         }
 
     def generate_match_insights(self, team1_name: str, team2_name: str, team1_form: Dict, 
-                               team2_form: Dict, h2h_analysis: Dict, prediction: Dict) -> List[str]:
+                               team2_form: Dict, h2h_analysis: Dict, prediction: Dict, 
+                               goals_prediction: Dict = None) -> List[str]:
         """Générer des insights personnalisés pour le match"""
         insights = []
         
@@ -329,6 +330,27 @@ class AnalysisEngine:
         confidence = prediction.get('confidence_level', 'Moyenne')
         insights.append(f"Niveau de confiance de l'analyse: {confidence}")
         
+        # Insights sur les buts et corners si disponibles
+        if goals_prediction:
+            total_goals = goals_prediction.get('total_goals', {}).get('prediction', 0)
+            team1_goals = goals_prediction.get('team_goals', {}).get('team1', 0)
+            team2_goals = goals_prediction.get('team_goals', {}).get('team2', 0)
+            total_corners = goals_prediction.get('corners', {}).get('total', 0)
+            over_2_5 = goals_prediction.get('total_goals', {}).get('over_2_5', 50)
+            
+            insights.append(f"Prédiction de buts: {total_goals} au total ({team1_goals} pour {team1_name}, {team2_goals} pour {team2_name})")
+            
+            if over_2_5 > 60:
+                insights.append(f"Match probablement riche en buts (Plus de 2.5 buts: {over_2_5}%)")
+            elif over_2_5 < 40:
+                insights.append(f"Match probablement pauvre en buts (Moins de 2.5 buts: {100-over_2_5}%)")
+            
+            insights.append(f"Prédiction de corners: environ {total_corners} au total")
+            
+            # Explication des prédictions
+            insights.append("Les prédictions de buts sont basées sur la moyenne offensive de chaque équipe ajustée par la solidité défensive de l'adversaire")
+            insights.append("Les prédictions de corners sont estimées à partir des statistiques offensives (plus une équipe attaque, plus elle obtient de corners)")
+        
         return insights
 
 
@@ -373,3 +395,128 @@ class AnalysisEngine:
                 'draw_probability': 25.0,
                 'confidence': 'Estimation par défaut'
             }
+
+
+    def predict_goals_and_corners(self, team1_fixtures: List[Dict], team2_fixtures: List[Dict], 
+                                 team1_id: int, team2_id: int) -> Dict:
+        """Prédire le nombre de buts et de corners pour le match"""
+        try:
+            # Analyser les statistiques de buts des équipes
+            team1_goals_stats = self._analyze_goals_stats(team1_fixtures, team1_id)
+            team2_goals_stats = self._analyze_goals_stats(team2_fixtures, team2_id)
+            
+            # Analyser les statistiques de corners des équipes
+            team1_corners_stats = self._analyze_corners_stats(team1_fixtures, team1_id)
+            team2_corners_stats = self._analyze_corners_stats(team2_fixtures, team2_id)
+            
+            # Prédiction du nombre total de buts
+            avg_goals_team1 = team1_goals_stats.get('avg_goals_for', 1.5)
+            avg_goals_team2 = team2_goals_stats.get('avg_goals_for', 1.5)
+            
+            # Ajustement défensif
+            team1_defensive_factor = 2.0 - team2_goals_stats.get('avg_goals_against', 1.0)
+            team2_defensive_factor = 2.0 - team1_goals_stats.get('avg_goals_against', 1.0)
+            
+            predicted_goals_team1 = max(0.5, avg_goals_team1 * team1_defensive_factor * 0.5)
+            predicted_goals_team2 = max(0.5, avg_goals_team2 * team2_defensive_factor * 0.5)
+            
+            total_goals = predicted_goals_team1 + predicted_goals_team2
+            
+            # Prédiction du nombre total de corners
+            avg_corners_team1 = team1_corners_stats.get('avg_corners_for', 5.0)
+            avg_corners_team2 = team2_corners_stats.get('avg_corners_for', 5.0)
+            
+            total_corners = (avg_corners_team1 + avg_corners_team2) / 2
+            
+            # Prédictions avec intervalles
+            goals_prediction = {
+                'total_goals': {
+                    'prediction': round(total_goals, 1),
+                    'range': f"{max(0, round(total_goals - 1))} - {round(total_goals + 1)}",
+                    'over_2_5': round(min(95, max(5, (total_goals - 2.5) * 30 + 50)), 1),
+                    'under_2_5': round(100 - min(95, max(5, (total_goals - 2.5) * 30 + 50)), 1)
+                },
+                'team_goals': {
+                    'team1': round(predicted_goals_team1, 1),
+                    'team2': round(predicted_goals_team2, 1)
+                },
+                'corners': {
+                    'total': round(total_corners, 1),
+                    'range': f"{max(0, round(total_corners - 2))} - {round(total_corners + 2)}",
+                    'over_9_5': round(min(95, max(5, (total_corners - 9.5) * 20 + 50)), 1),
+                    'under_9_5': round(100 - min(95, max(5, (total_corners - 9.5) * 20 + 50)), 1)
+                }
+            }
+            
+            return goals_prediction
+            
+        except Exception as e:
+            print(f"Erreur lors de la prédiction de buts et corners: {e}")
+            # Prédiction par défaut en cas d'erreur
+            return {
+                'total_goals': {
+                    'prediction': 2.5,
+                    'range': "2 - 3",
+                    'over_2_5': 50.0,
+                    'under_2_5': 50.0
+                },
+                'team_goals': {
+                    'team1': 1.3,
+                    'team2': 1.2
+                },
+                'corners': {
+                    'total': 9.0,
+                    'range': "7 - 11",
+                    'over_9_5': 45.0,
+                    'under_9_5': 55.0
+                }
+            }
+
+    def _analyze_goals_stats(self, fixtures: List[Dict], team_id: int) -> Dict:
+        """Analyser les statistiques de buts d'une équipe"""
+        if not fixtures:
+            return {'avg_goals_for': 1.5, 'avg_goals_against': 1.5}
+        
+        total_goals_for = 0
+        total_goals_against = 0
+        matches_count = len(fixtures)
+        
+        for fixture in fixtures:
+            teams = fixture.get('teams', {})
+            goals = fixture.get('goals', {})
+            
+            home_id = teams.get('home', {}).get('id')
+            away_id = teams.get('away', {}).get('id')
+            home_goals = goals.get('home', 0) or 0
+            away_goals = goals.get('away', 0) or 0
+            
+            if home_id == team_id:
+                total_goals_for += home_goals
+                total_goals_against += away_goals
+            elif away_id == team_id:
+                total_goals_for += away_goals
+                total_goals_against += home_goals
+        
+        return {
+            'avg_goals_for': total_goals_for / matches_count if matches_count > 0 else 1.5,
+            'avg_goals_against': total_goals_against / matches_count if matches_count > 0 else 1.5
+        }
+
+    def _analyze_corners_stats(self, fixtures: List[Dict], team_id: int) -> Dict:
+        """Analyser les statistiques de corners d'une équipe"""
+        # Note: L'API Football ne fournit pas toujours les statistiques de corners
+        # Pour cette démo, nous utiliserons une estimation basée sur les buts et la possession
+        if not fixtures:
+            return {'avg_corners_for': 5.0, 'avg_corners_against': 5.0}
+        
+        # Estimation basée sur les buts (plus une équipe attaque, plus elle a de corners)
+        goals_stats = self._analyze_goals_stats(fixtures, team_id)
+        
+        # Formule d'estimation: plus de buts marqués = plus de corners
+        estimated_corners_for = max(3.0, min(8.0, goals_stats['avg_goals_for'] * 3.5))
+        estimated_corners_against = max(3.0, min(8.0, goals_stats['avg_goals_against'] * 3.5))
+        
+        return {
+            'avg_corners_for': estimated_corners_for,
+            'avg_corners_against': estimated_corners_against
+        }
